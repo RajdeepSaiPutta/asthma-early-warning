@@ -115,14 +115,54 @@ def sensitivity_specificity(y_true, y_pred, n_classes: int = 4):
     return results
 
 
+class EarlyStopping:
+    def __init__(self, patience: int = 5, min_delta: float = 1e-4, mode: str = "max"):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.mode = mode
+        self.best = -float("inf") if mode == "max" else float("inf")
+        self.counter = 0
+        self.best_state = None
+
+    def __call__(self, metric: float, model: torch.nn.Module) -> bool:
+        if self.mode == "max":
+            improved = metric > self.best + self.min_delta
+        else:
+            improved = metric < self.best - self.min_delta
+
+        if improved:
+            self.best = metric
+            self.counter = 0
+            self.best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            return False
+        else:
+            self.counter += 1
+            return self.counter >= self.patience
+
+    def restore_best(self, model: torch.nn.Module):
+        if self.best_state:
+            model.load_state_dict(self.best_state)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", required=True, help="icbhi root directory")
-    parser.add_argument("--epochs", type=int, default=20)
+    parser.add_argument("--epochs", type=int, default=50)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+    parser.add_argument("--patience", type=int, default=10, help="early stopping patience")
+    parser.add_argument("--lr-scheduler", action="store_true", help="use cosine annealing LR")
+    parser.add_argument("--checkpoint-dir", default="checkpoints", help="checkpoint directory")
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
+
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    random.seed(args.seed)
+
+    checkpoint_dir = Path(args.checkpoint_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
     root = Path(args.data)
     pairs = list_recordings(root)
@@ -146,6 +186,15 @@ def main() -> None:
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = torch.nn.CrossEntropyLoss()
 
+    if args.lr_scheduler:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+    else:
+        scheduler = None
+
+    early_stopping = EarlyStopping(patience=args.patience, mode="max")
+
+    best_val_score = 0.0
+
     for epoch in range(1, args.epochs + 1):
         model.train()
         running = 0.0
@@ -157,8 +206,47 @@ def main() -> None:
             loss.backward()
             optimizer.step()
             running += loss.item() * specs.size(0)
-        print(f"epoch {epoch} train loss {running / len(train_idx):.4f}")
+        train_loss = running / len(train_idx)
 
+        # Validation
+        model.eval()
+        val_true, val_pred = [], []
+        with torch.no_grad():
+            for specs, labels in val_loader:
+                specs = specs.to(args.device)
+                logits = model(specs)
+                val_true.extend(labels.tolist())
+                val_pred.extend(logits.argmax(1).cpu().tolist())
+
+        val_results = sensitivity_specificity(val_true, val_pred)
+        val_macro = np.mean([(s + p) / 2 for _, s, p in val_results])
+
+        print(f"epoch {epoch} train_loss={train_loss:.4f} val_icbhi={val_macro:.4f}")
+        for cls, sens, spec in val_results:
+            print(f"  {LABEL_NAMES[cls]:8s} sens={sens:.3f} spec={spec:.3f}")
+
+        if scheduler:
+            scheduler.step()
+
+        # Early stopping check
+        if early_stopping(val_macro, model):
+            print(f"Early stopping triggered at epoch {epoch}")
+            early_stopping.restore_best(model)
+            break
+
+        # Save best checkpoint
+        if val_macro > best_val_score:
+            best_val_score = val_macro
+            torch.save({
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "val_icbhi": val_macro,
+                "args": vars(args),
+            }, checkpoint_dir / "best_model.pt")
+            print(f"  saved best checkpoint (icbhi={val_macro:.4f})")
+
+    # Final evaluation on test set
     model.eval()
     y_true, y_pred = [], []
     with torch.no_grad():
@@ -168,14 +256,23 @@ def main() -> None:
             y_true.extend(labels.tolist())
             y_pred.extend(logits.argmax(1).cpu().tolist())
 
-    print("test set per class:")
+    print("\nTest set results:")
     for cls, sens, spec in sensitivity_specificity(y_true, y_pred):
-        print(
-            f"  {LABEL_NAMES[cls]:8s} sensitivity {sens:.3f} specificity {spec:.3f}"
-        )
+        print(f"  {LABEL_NAMES[cls]:8s} sensitivity={sens:.3f} specificity={spec:.3f}")
     macro = np.mean([(s + p) / 2 for _, s, p in sensitivity_specificity(y_true, y_pred)])
-    print(f"icbhi score (macro avg sens+spec): {macro:.3f}")
-    print(f"patients: train {len(train_idx)} recordings, val {len(val_idx)}, test {len(test_idx)}")
+    print(f"ICBHI score (macro avg sens+spec): {macro:.4f}")
+    print(f"Patients: train {len(train_idx)}, val {len(val_idx)}, test {len(test_idx)}")
+
+    # Export ONNX
+    onnx_path = checkpoint_dir / "model.onnx"
+    dummy_input = torch.randn(1, 1, N_MELS, 100).to(args.device)
+    torch.onnx.export(
+        model, dummy_input, onnx_path,
+        input_names=["input"], output_names=["logits"],
+        dynamic_axes={"input": {0: "batch", 3: "time"}, "logits": {0: "batch"}},
+        opset_version=17,
+    )
+    print(f"Exported ONNX model to {onnx_path}")
 
 
 if __name__ == "__main__":
