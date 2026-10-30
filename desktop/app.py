@@ -35,6 +35,7 @@ if str(APP_ROOT) not in sys.path:
 import torch
 
 from air.model import AirModel
+from desktop.pdf_report import save_pdf
 from model.spectrogram_cnn import SpectrogramCNN
 from predict import LABEL_NAMES, load_model, load_wav, spec_from_wav
 from scripts.fetch_air import fetch_air_quality
@@ -550,8 +551,6 @@ class App(tk.Tk):
             return
         text = build_report_text(self.breath_result, self.air_result, self.city_used, self.wav_used)
         if target.lower().endswith(".pdf"):
-            from desktop.pdf_report import save_pdf
-
             save_pdf(text, target)
         else:
             Path(target).write_text(text)
