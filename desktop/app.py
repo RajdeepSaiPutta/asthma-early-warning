@@ -19,22 +19,26 @@ from __future__ import annotations
 import os
 import sys
 import threading
-import traceback
-from datetime import datetime
-from pathlib import Path
-
 import tkinter as tk
+import traceback
+from collections.abc import Callable
+from datetime import datetime
+from functools import partial
+from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from typing import Any
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
-import torch  # noqa: E402
+import torch
 
-from air.model import AirModel  # noqa: E402
-from predict import LABEL_NAMES, load_model, load_wav, spec_from_wav  # noqa: E402
-from scripts.fetch_air import fetch_air_quality  # noqa: E402
+from air.model import AirModel
+from model.spectrogram_cnn import SpectrogramCNN
+from predict import LABEL_NAMES, load_model, load_wav, spec_from_wav
+from scripts.fetch_air import fetch_air_quality
+
 # ---------------------------------------------------------------- theme
 
 BG = "#141619"
@@ -105,9 +109,7 @@ def build_report_text(
         name, _ = BREATH_COPY[breath_result["prediction"]]
         probs = breath_result["probabilities"]
         top = max(probs, key=probs.get)
-        lines.append(
-            f"- finding: {breath_result['prediction']} ({probs[top]:.0%} confidence)"
-        )
+        lines.append(f"- finding: {breath_result['prediction']} ({probs[top]:.0%} confidence)")
         lines.append(f"- meaning: {name}")
         for label in LABEL_NAMES:
             lines.append(f"  {label:8s} {probs[label]:.2f}")
@@ -127,7 +129,9 @@ def build_report_text(
             lines.append(f"- location: {city}")
         band = air_result["risk_band"]
         if band == "high":
-            lines.append("- meaning: limit outdoor exertion, wear a mask outside, keep windows shut")
+            lines.append(
+                "- meaning: limit outdoor exertion, wear a mask outside, keep windows shut"
+            )
         elif band == "medium":
             lines.append("- meaning: fine for short outings, avoid heavy outdoor exercise")
         else:
@@ -139,9 +143,13 @@ def build_report_text(
     breath_flag = breath_result and breath_result["prediction"] != "normal"
     air_flag = air_result and air_result["risk_band"] == "high"
     if breath_flag and air_flag:
-        lines.append("combined: abnormal breath findings on a high-pollution day - keep the rescue inhaler close.")
+        lines.append(
+            "combined: abnormal breath findings on a high-pollution day - keep the rescue inhaler close."
+        )
     elif breath_flag:
-        lines.append("combined: abnormal breath findings, air is acceptable - review with a clinician.")
+        lines.append(
+            "combined: abnormal breath findings, air is acceptable - review with a clinician."
+        )
     elif air_flag:
         lines.append("combined: clean recording, high pollution - protect the airway outdoors.")
 
@@ -160,7 +168,7 @@ class App(tk.Tk):
 
         self.device = pick_device()
         self.checkpoint = find_checkpoint()
-        self.breath_model = None
+        self.breath_model: SpectrogramCNN | None = None
         self.breath_result: dict | None = None
         self.air_result: dict | None = None
         self.city_used: str | None = None
@@ -187,7 +195,9 @@ class App(tk.Tk):
             background=[("selected", PANEL)],
             foreground=[("selected", FG)],
         )
-        style.configure("TEntry", fieldbackground=PANEL_ALT, foreground=FG, insertcolor=FG, borderwidth=0)
+        style.configure(
+            "TEntry", fieldbackground=PANEL_ALT, foreground=FG, insertcolor=FG, borderwidth=0
+        )
         style.configure("G.TEntry", fieldbackground=PANEL_ALT, foreground=FG)
 
     # ------------------------------------------------------------ layout
@@ -196,8 +206,11 @@ class App(tk.Tk):
         head = tk.Frame(self, bg=BG)
         head.pack(fill="x", padx=20, pady=(18, 6))
         tk.Label(
-            head, text="asthma early warning", font=("Helvetica", 19, "bold"),
-            bg=BG, fg=FG,
+            head,
+            text="asthma early warning",
+            font=("Helvetica", 19, "bold"),
+            bg=BG,
+            fg=FG,
         ).pack(side="left")
 
     def _build_tabs(self) -> None:
@@ -217,9 +230,7 @@ class App(tk.Tk):
         self._build_screen_tab()
 
     def _build_statusbar(self) -> None:
-        self.status = tk.Label(
-            self, text="", anchor="w", bg=BG, fg=MUTED, font=("Helvetica", 10)
-        )
+        self.status = tk.Label(self, text="", anchor="w", bg=BG, fg=MUTED, font=("Helvetica", 10))
         self.status.pack(fill="x", padx=22, pady=(0, 8))
 
     def set_status(self, text: str) -> None:
@@ -234,17 +245,30 @@ class App(tk.Tk):
         return frame
 
     @staticmethod
-    def label(parent: tk.Frame, text: str, color: str = FG, size: int = 11, bold: bool = False) -> tk.Label:
+    def label(
+        parent: tk.Frame, text: str, color: str = FG, size: int = 11, bold: bool = False
+    ) -> tk.Label:
         return tk.Label(
-            parent, text=text, bg=parent["bg"], fg=color,
+            parent,
+            text=text,
+            bg=parent["bg"],
+            fg=color,
             font=("Helvetica", size, "bold" if bold else "normal"),
         )
 
     def button(self, parent: tk.Frame, text: str, command) -> tk.Button:
         return tk.Button(
-            parent, text=text, command=command, bg=ACCENT, fg="#10221f",
-            activebackground="#6be3d4", activeforeground="#10221f",
-            relief="flat", padx=16, pady=6, font=("Helvetica", 11, "bold"),
+            parent,
+            text=text,
+            command=command,
+            bg=ACCENT,
+            fg="#10221f",
+            activebackground="#6be3d4",
+            activeforeground="#10221f",
+            relief="flat",
+            padx=16,
+            pady=6,
+            font=("Helvetica", 11, "bold"),
             cursor="hand2",
         )
 
@@ -253,7 +277,7 @@ class App(tk.Tk):
         var.insert(0, initial)
         return var
 
-    def run_threaded(self, work, done) -> None:
+    def run_threaded(self, work: Callable[[], Any], done: Callable[[Any], None]) -> None:
         def wrapper() -> None:
             try:
                 result = work()
@@ -328,12 +352,16 @@ class App(tk.Tk):
         self.run_threaded(lambda: self._classify(path), self._finish_breath)
 
     def _classify(self, path: Path) -> dict:
+        checkpoint = self.checkpoint
         if self.breath_model is None:
-            self.breath_model = load_model(self.checkpoint, self.device)
+            assert checkpoint is not None, "call _start_breath first, which guards the checkpoint"
+            self.breath_model = load_model(checkpoint, self.device)
+        model = self.breath_model
+        assert model is not None
         waveform = load_wav(path)
         spec = spec_from_wav(waveform).unsqueeze(0).to(self.device)
         with torch.no_grad():
-            probs = torch.softmax(self.breath_model(spec), dim=1)[0]
+            probs = torch.softmax(model(spec), dim=1)[0]
         return {
             "prediction": LABEL_NAMES[int(probs.argmax())],
             "probabilities": {name: float(p) for name, p in zip(LABEL_NAMES, probs.tolist())},
@@ -363,12 +391,17 @@ class App(tk.Tk):
         color = WARN if value >= 0.5 else ACCENT if value >= 0.25 else "#5a6067"
         canvas.bind(
             "<Configure>",
-            lambda event, c=canvas, v=value, col=color: draw_bar(c, v, col),
+            lambda _event: draw_bar(canvas, value, color),
         )
         draw_bar(canvas, value, color)
         tk.Label(
-            row, text=f"{value:.2f}", width=5, anchor="e",
-            bg=PANEL_ALT, fg=FG, font=("Helvetica", 10),
+            row,
+            text=f"{value:.2f}",
+            width=5,
+            anchor="e",
+            bg=PANEL_ALT,
+            fg=FG,
+            font=("Helvetica", 10),
         ).pack(side="left")
 
     # ------------------------------------------------------------ air tab
@@ -381,9 +414,15 @@ class App(tk.Tk):
 
         form = self.card(tab)
         form.columnconfigure((0, 1, 2), weight=1)
-        tk.Label(form, text="city", bg=PANEL_ALT, fg=MUTED, font=("Helvetica", 10)).grid(row=0, column=0)
-        tk.Label(form, text="latitude", bg=PANEL_ALT, fg=MUTED, font=("Helvetica", 10)).grid(row=0, column=1)
-        tk.Label(form, text="longitude", bg=PANEL_ALT, fg=MUTED, font=("Helvetica", 10)).grid(row=0, column=2)
+        tk.Label(form, text="city", bg=PANEL_ALT, fg=MUTED, font=("Helvetica", 10)).grid(
+            row=0, column=0
+        )
+        tk.Label(form, text="latitude", bg=PANEL_ALT, fg=MUTED, font=("Helvetica", 10)).grid(
+            row=0, column=1
+        )
+        tk.Label(form, text="longitude", bg=PANEL_ALT, fg=MUTED, font=("Helvetica", 10)).grid(
+            row=0, column=2
+        )
         self.city_var = self.entry(form, 14, "Hyderabad")
         self.city_var.grid(row=1, column=0, padx=(6, 24), sticky="we")
         self.lat_var = self.entry(form, 12, "17.385")
@@ -394,9 +433,17 @@ class App(tk.Tk):
         presets.grid(row=2, column=0, columnspan=3, sticky="w", pady=(8, 0))
         for city in CITY_PRESETS:
             tk.Button(
-                presets, text=city, command=lambda c=city: self._use_preset(c),
-                bg=PANEL_ALT, fg=ACCENT, activebackground=PANEL, activeforeground=ACCENT,
-                relief="flat", font=("Helvetica", 10), cursor="hand2", padx=8,
+                presets,
+                text=city,
+                command=partial(self._use_preset, city),
+                bg=PANEL_ALT,
+                fg=ACCENT,
+                activebackground=PANEL,
+                activeforeground=ACCENT,
+                relief="flat",
+                font=("Helvetica", 10),
+                cursor="hand2",
+                padx=8,
             ).pack(side="left", padx=(0, 6))
         self.air_go = self.button(form, "fetch and forecast", self._start_air)
         self.air_go.grid(row=3, column=0, columnspan=3, sticky="w", pady=(12, 0))
@@ -421,7 +468,9 @@ class App(tk.Tk):
         try:
             lat, lon = float(self.lat_var.get()), float(self.lon_var.get())
         except ValueError:
-            messagebox.showwarning("bad coordinates", "latitude and longitude must be numbers.", parent=self)
+            messagebox.showwarning(
+                "bad coordinates", "latitude and longitude must be numbers.", parent=self
+            )
             return
         self.air_go.configure(state="disabled", bg=MUTED)
         city = self.city_var.get().strip() or f"{lat:.2f},{lon:.2f}"
@@ -444,9 +493,7 @@ class App(tk.Tk):
         self.air_result = {"forecast_pm25": float(forecast), "risk_band": band}
         self.city_used = city
         color = {"low": OK, "medium": WARN, "high": DANGER}[band]
-        self.air_result_label.configure(
-            text=f"pm2.5 {forecast:.1f} ug/m3 - {band} risk", fg=color
-        )
+        self.air_result_label.configure(text=f"pm2.5 {forecast:.1f} ug/m3 - {band} risk", fg=color)
         self.air_detail.configure(
             text=f"trained on the last {len(frame)} days of weather and particulate data for {city}"
         )
@@ -462,11 +509,21 @@ class App(tk.Tk):
         save_row = self.card(tab)
         self.button(save_row, "save report", self._save_report).pack(side="left")
         self.report_text = tk.Text(
-            tab, height=20, bg=PANEL_ALT, fg=FG, relief="flat", padx=14, pady=12,
-            font=("Courier New", 10), wrap="word", insertbackground=FG,
+            tab,
+            height=20,
+            bg=PANEL_ALT,
+            fg=FG,
+            relief="flat",
+            padx=14,
+            pady=12,
+            font=("Courier New", 10),
+            wrap="word",
+            insertbackground=FG,
         )
         self.report_text.pack(fill="both", expand=True, pady=10)
-        self.report_text.insert("1.0", "run the breath and air panels first - the report assembles both results.")
+        self.report_text.insert(
+            "1.0", "run the breath and air panels first - the report assembles both results."
+        )
         self.report_text.configure(state="disabled")
 
     def _refresh_report(self) -> None:
@@ -486,14 +543,15 @@ class App(tk.Tk):
         stamp = datetime.now().strftime("%Y%m%d-%H%M")
         suggested = f"asthma-report-{stamp}.md"
         target = filedialog.asksaveasfilename(
-            defaultextension=".md", filetypes=[("markdown", "*.md"), ("text", "*.txt")],
+            defaultextension=".md",
+            filetypes=[("markdown", "*.md"), ("text", "*.txt")],
             initialfile=suggested,
         )
         if not target:
             return
-        Path(target).write_text(build_report_text(
-            self.breath_result, self.air_result, self.city_used, self.wav_used
-        ))
+        Path(target).write_text(
+            build_report_text(self.breath_result, self.air_result, self.city_used, self.wav_used)
+        )
         self.set_status(f"report saved to {target}")
 
     # ------------------------------------------------------------ screen tab
@@ -558,9 +616,7 @@ class App(tk.Tk):
         metrics = result["metrics"]
         self.screen_result_label.configure(text="anatomy metrics", fg=FG)
         detail = "\n".join(
-            [
-                f"{name.replace('_', ' '):18s} {value:.2f}" for name, value in metrics.items()
-            ]
+            [f"{name.replace('_', ' '):18s} {value:.2f}" for name, value in metrics.items()]
             + [""]
             + observations(metrics)
         )

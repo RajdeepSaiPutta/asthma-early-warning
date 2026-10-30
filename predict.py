@@ -14,7 +14,6 @@ import torch
 import torchaudio
 from torchaudio.transforms import AmplitudeToDB, MelSpectrogram
 
-from data.icbhi import parse_annotation, recording_label
 from model.spectrogram_cnn import SpectrogramCNN
 
 LABEL_NAMES = ["normal", "crackle", "wheeze", "both"]
@@ -27,8 +26,10 @@ def state_dict_from_checkpoint(path: str | Path) -> dict:
     data = torch.load(path, map_location="cpu")
     if isinstance(data, dict) and "model_state_dict" in data:
         return data["model_state_dict"]
-    if isinstance(data, dict) and "model" in data and not any(
-        k.startswith(("conv", "fc", "blocks")) for k in data
+    if (
+        isinstance(data, dict)
+        and "model" in data
+        and not any(k.startswith(("conv", "fc", "blocks")) for k in data)
     ):
         return data["model"]
     return data
@@ -48,8 +49,8 @@ def load_wav(path: Path, target_sr: int = TARGET_SR) -> torch.Tensor:
     with wave.open(str(path), "rb") as wf:
         sr = wf.getframerate()
         frames = wf.readframes(wf.getnframes())
-    waveform = np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
-    waveform = torch.from_numpy(waveform).unsqueeze(0)
+    samples = np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
+    waveform = torch.from_numpy(samples).unsqueeze(0)
     if sr != target_sr:
         waveform = torchaudio.transforms.Resample(sr, target_sr)(waveform)
     if waveform.shape[0] > 1:
@@ -68,9 +69,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", required=True, help="path to model.pt")
     parser.add_argument("--wav", required=True, help="path to a wav file")
-    parser.add_argument(
-        "--device", default="cuda" if torch.cuda.is_available() else "cpu"
-    )
+    parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     args = parser.parse_args()
 
     device = args.device

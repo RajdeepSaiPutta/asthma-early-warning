@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 import zipfile
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from data.icbhi import list_recordings  # noqa: E402
+from data.icbhi import list_recordings
 
 
 def main() -> None:
@@ -35,9 +35,7 @@ def main() -> None:
 
     pairs = list_recordings(target)
     if not pairs:
-        raise SystemExit(
-            f"no wav/txt pairs found under {target}; check the archive layout"
-        )
+        raise SystemExit(f"no wav/txt pairs found under {target}; check the archive layout")
     print(f"extracted {len(pairs)} annotated recordings to {target}")
 
 

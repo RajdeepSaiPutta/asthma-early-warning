@@ -6,8 +6,6 @@ builds lag features from the past week and fits a random forest regressor.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 

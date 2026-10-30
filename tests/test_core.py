@@ -1,19 +1,15 @@
 """Tests for asthma-early-warning."""
 
-import numpy as np
 import torch
-from pathlib import Path
 
+from air.model import AirModel
 from data.icbhi import (
-    parse_annotation,
-    recording_label,
-    patient_id,
-    list_recordings,
-    cycle_label,
     Cycle,
+    cycle_label,
+    patient_id,
+    recording_label,
 )
 from model.spectrogram_cnn import SpectrogramCNN
-from air.model import AirModel
 
 
 def test_cycle_label():
@@ -70,7 +66,9 @@ def test_air_model_risk_bands():
 def test_air_model_add_lags():
     """Test lag feature generation."""
     import pandas as pd
+
     from air.model import add_lags
+
     df = pd.DataFrame({"pm25": [10, 20, 30, 40, 50, 60, 70, 80]})
     result = add_lags(df, "pm25")
     assert "pm25_lag1" in result.columns

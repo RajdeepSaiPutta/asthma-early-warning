@@ -10,18 +10,17 @@ from __future__ import annotations
 
 import argparse
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import requests
-
 
 OPEN_METEO_ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 OPEN_METEO_AIR_QUALITY = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
 
 def fetch_weather(lat: float, lon: float, days: int = 30) -> pd.DataFrame:
-    end = datetime.now(timezone.utc).date() - timedelta(days=1)  # archive lags a day
+    end = datetime.now(UTC).date() - timedelta(days=1)  # archive lags a day
     start = end - timedelta(days=days)
     params = {
         "latitude": lat,
@@ -69,7 +68,7 @@ def fetch_pm25_openaq(lat: float, lon: float, days: int = 30) -> pd.Series | Non
     key = os.environ.get("OPENAQ_KEY")
     if not key:
         return None
-    end = datetime.now(timezone.utc)
+    end = datetime.now(UTC)
     start = end - timedelta(days=days)
     url = "https://api.openaq.org/v2/measurements"
     headers = {"X-API-Key": key}
@@ -90,9 +89,7 @@ def fetch_pm25_openaq(lat: float, lon: float, days: int = 30) -> pd.Series | Non
     records = []
     for item in results:
         for measurement in item.get("measurements", []):
-            records.append(
-                {"time": measurement["lastUpdated"], "pm25": measurement["value"]}
-            )
+            records.append({"time": measurement["lastUpdated"], "pm25": measurement["value"]})
     if not records:
         return None
     series = pd.DataFrame(records)

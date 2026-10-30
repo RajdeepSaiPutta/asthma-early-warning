@@ -1,9 +1,10 @@
 """tests for the desktop app helpers, screen metrics, and checkpoint loading."""
 
+from pathlib import Path
+
 import numpy as np
 import torch
 from PIL import Image
-from pathlib import Path
 
 from air.model import AirModel
 from desktop.app import build_report_text, find_checkpoint

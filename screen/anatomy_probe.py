@@ -65,7 +65,9 @@ def anatomy_metrics(img: np.ndarray) -> dict:
     # lower vs upper lung brightness; hyperinflation tends to brighten lowers
     upper = img[int(h * 0.25) : int(h * 0.50)]
     lower = img[int(h * 0.50) : int(h * 0.85)]
-    lower_dominance = float(np.clip((lower.mean() - upper.mean()) / max(upper.mean(), 1e-6) + 0.5, 0.0, 1.0))
+    lower_dominance = float(
+        np.clip((lower.mean() - upper.mean()) / max(upper.mean(), 1e-6) + 0.5, 0.0, 1.0)
+    )
 
     return {
         "transparency": round(transparency, 3),

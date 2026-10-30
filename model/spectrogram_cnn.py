@@ -6,7 +6,7 @@ input: (batch, 1, n_mels, time). output: logits over 4 classes.
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 
 class SpectrogramCNN(nn.Module):

@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import random
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -26,13 +27,12 @@ N_MELS = 64
 
 class ICBHIDataset(torch.utils.data.Dataset):
     def __init__(self, pairs, n_mels: int = N_MELS, target_sr: int = TARGET_SR):
-        import torchaudio
         from torchaudio.transforms import AmplitudeToDB, MelSpectrogram
 
         self.pairs = pairs
         self.mel = MelSpectrogram(sample_rate=target_sr, n_mels=n_mels)
         self.db = AmplitudeToDB()
-        self.resample_cache = {}
+        self.resample_cache: dict[int, Any] = {}
 
     def _load(self, path: Path):
         import wave
@@ -40,16 +40,14 @@ class ICBHIDataset(torch.utils.data.Dataset):
         with wave.open(str(path), "rb") as wf:
             sr = wf.getframerate()
             frames = wf.readframes(wf.getnframes())
-        waveform = np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
-        waveform = torch.from_numpy(waveform).unsqueeze(0)
+        samples = np.frombuffer(frames, dtype="<i2").astype(np.float32) / 32768.0
+        waveform = torch.from_numpy(samples).unsqueeze(0)
         if sr != TARGET_SR:
             import torchaudio
 
             key = sr
             if key not in self.resample_cache:
-                self.resample_cache[key] = torchaudio.transforms.Resample(
-                    sr, TARGET_SR
-                )
+                self.resample_cache[key] = torchaudio.transforms.Resample(sr, TARGET_SR)
             waveform = self.resample_cache[key](waveform)
         if waveform.shape[0] > 1:
             waveform = waveform.mean(dim=0, keepdim=True)
@@ -59,7 +57,7 @@ class ICBHIDataset(torch.utils.data.Dataset):
         return len(self.pairs)
 
     def __getitem__(self, idx: int):
-        patient, wav, txt = self.pairs[idx]
+        _patient, wav, txt = self.pairs[idx]
         waveform, _ = self._load(wav)
         spec = self.db(self.mel(waveform)).clamp(-80.0, 0.0)
         spec = (spec + 80.0) / 80.0  # map to roughly 0..1
@@ -122,7 +120,7 @@ class EarlyStopping:
         self.mode = mode
         self.best = -float("inf") if mode == "max" else float("inf")
         self.counter = 0
-        self.best_state = None
+        self.best_state: dict[str, Any] | None = None
 
     def __call__(self, metric: float, model: torch.nn.Module) -> bool:
         if self.mode == "max":
@@ -172,14 +170,21 @@ def main() -> None:
     train_idx, val_idx, test_idx = patient_split(pairs)
     dataset = ICBHIDataset(pairs)
     train_loader = DataLoader(
-        Subset(dataset, train_idx), batch_size=args.batch_size, shuffle=True,
-        collate_fn=collate, num_workers=0,
+        Subset(dataset, train_idx),
+        batch_size=args.batch_size,
+        shuffle=True,
+        collate_fn=collate,
+        num_workers=0,
     )
     val_loader = DataLoader(
-        Subset(dataset, val_idx), batch_size=args.batch_size, collate_fn=collate,
+        Subset(dataset, val_idx),
+        batch_size=args.batch_size,
+        collate_fn=collate,
     )
     test_loader = DataLoader(
-        Subset(dataset, test_idx), batch_size=args.batch_size, collate_fn=collate,
+        Subset(dataset, test_idx),
+        batch_size=args.batch_size,
+        collate_fn=collate,
     )
 
     model = SpectrogramCNN().to(args.device)
@@ -237,13 +242,16 @@ def main() -> None:
         # Save best checkpoint
         if val_macro > best_val_score:
             best_val_score = val_macro
-            torch.save({
-                "epoch": epoch,
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "val_icbhi": val_macro,
-                "args": vars(args),
-            }, checkpoint_dir / "best_model.pt")
+            torch.save(
+                {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "val_icbhi": val_macro,
+                    "args": vars(args),
+                },
+                checkpoint_dir / "best_model.pt",
+            )
             print(f"  saved best checkpoint (icbhi={val_macro:.4f})")
 
     # Final evaluation on test set
@@ -267,8 +275,11 @@ def main() -> None:
     onnx_path = checkpoint_dir / "model.onnx"
     dummy_input = torch.randn(1, 1, N_MELS, 100).to(args.device)
     torch.onnx.export(
-        model, dummy_input, onnx_path,
-        input_names=["input"], output_names=["logits"],
+        model,
+        (dummy_input,),
+        onnx_path,
+        input_names=["input"],
+        output_names=["logits"],
         dynamic_axes={"input": {0: "batch", 3: "time"}, "logits": {0: "batch"}},
         opset_version=17,
     )

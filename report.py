@@ -9,16 +9,15 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pandas as pd
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from predict import load_wav, spec_from_wav, LABEL_NAMES, load_model  # noqa: E402
-from model.spectrogram_cnn import SpectrogramCNN  # noqa: E402
-from air.model import AirModel  # noqa: E402
+from air.model import AirModel
+from predict import LABEL_NAMES, load_model, load_wav, spec_from_wav
 
 
 def breath_prediction(checkpoint: str, wav: Path, device: str) -> dict:

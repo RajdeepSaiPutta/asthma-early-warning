@@ -8,21 +8,17 @@ Three panels:
 
 from __future__ import annotations
 
-import os
 import tempfile
 from pathlib import Path
-from typing import Optional
 
-import pandas as pd
 import torch
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from air.model import AirModel
-from data.icbhi import list_recordings
 from model.spectrogram_cnn import SpectrogramCNN
-from predict import load_wav, spec_from_wav, LABEL_NAMES
+from predict import LABEL_NAMES, load_wav, spec_from_wav
 
 app = FastAPI(
     title="Asthma Early Warning API",
@@ -39,9 +35,9 @@ app.add_middleware(
 )
 
 # Global model instances (loaded on startup)
-breath_model: Optional[SpectrogramCNN] = None
-breath_device: Optional[torch.device] = None
-air_model: Optional[AirModel] = None
+breath_model: SpectrogramCNN | None = None
+breath_device: torch.device | None = None
+air_model: AirModel | None = None
 
 
 class BreathResponse(BaseModel):
@@ -56,7 +52,7 @@ class AirResponse(BaseModel):
 
 class ReportResponse(BaseModel):
     breath: BreathResponse
-    air: Optional[AirResponse] = None
+    air: AirResponse | None = None
 
 
 class ScreenResponse(BaseModel):
@@ -105,13 +101,18 @@ async def classify_breath(file: UploadFile = File(...)):
     # Save uploaded file temporarily
     content = await file.read()
     import tempfile
+
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         tmp.write(content)
         tmp_path = Path(tmp.name)
 
     try:
         waveform = load_wav(Path(tmp_path))
-        spec = spec_from_wav(waveform).unsqueeze(0).to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+        spec = (
+            spec_from_wav(waveform)
+            .unsqueeze(0)
+            .to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+        )
 
         with torch.no_grad():
             logits = breath_model(spec)
@@ -120,7 +121,9 @@ async def classify_breath(file: UploadFile = File(...)):
         pred = int(probs.argmax())
         return BreathResponse(
             prediction=LABEL_NAMES[pred],
-            probabilities={name: round(float(p), 4) for name, p in zip(LABEL_NAMES, probs.tolist())},
+            probabilities={
+                name: round(float(p), 4) for name, p in zip(LABEL_NAMES, probs.tolist())
+            },
         )
     finally:
         tmp_path.unlink(missing_ok=True)
@@ -134,7 +137,7 @@ async def forecast_air(
     days: int = Form(30),
 ):
     """Fetch weather/PM2.5 and forecast next-day PM2.5 risk."""
-    from scripts.fetch_air import fetch_weather, fetch_pm25
+    from scripts.fetch_air import fetch_pm25, fetch_weather
 
     weather = fetch_weather(lat, lon, days)
     pm = fetch_pm25(lat, lon, days)
@@ -158,9 +161,9 @@ async def forecast_air(
 @app.post("/report", response_model=ReportResponse)
 async def generate_report(
     wav_file: UploadFile = File(...),
-    air_city: Optional[str] = Form(None),
-    air_lat: Optional[float] = Form(None),
-    air_lon: Optional[float] = Form(None),
+    air_city: str | None = Form(None),
+    air_lat: float | None = Form(None),
+    air_lon: float | None = Form(None),
 ):
     """Generate combined breath + air risk report."""
     # Breath classification
@@ -169,13 +172,18 @@ async def generate_report(
 
     content = await wav_file.read()
     import tempfile
+
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         tmp.write(content)
         tmp_path = Path(tmp.name)
 
     try:
         waveform = load_wav(Path(tmp_path))
-        spec = spec_from_wav(waveform).unsqueeze(0).to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+        spec = (
+            spec_from_wav(waveform)
+            .unsqueeze(0)
+            .to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+        )
 
         with torch.no_grad():
             logits = breath_model(spec)
@@ -184,7 +192,9 @@ async def generate_report(
         pred = int(probs.argmax())
         breath_result = BreathResponse(
             prediction=LABEL_NAMES[pred],
-            probabilities={name: round(float(p), 4) for name, p in zip(LABEL_NAMES, probs.tolist())},
+            probabilities={
+                name: round(float(p), 4) for name, p in zip(LABEL_NAMES, probs.tolist())
+            },
         )
     finally:
         tmp_path.unlink(missing_ok=True)
@@ -192,7 +202,8 @@ async def generate_report(
     # Air forecast (if coordinates provided)
     air_result = None
     if air_city and air_lat is not None and air_lon is not None:
-        from scripts.fetch_air import fetch_weather, fetch_pm25
+        from scripts.fetch_air import fetch_pm25, fetch_weather
+
         weather = fetch_weather(air_lat, air_lon, 30)
         pm = fetch_pm25(air_lat, air_lon, 30)
         if pm is not None:
@@ -229,4 +240,5 @@ async def analyze_screen(file: UploadFile = File(...)):
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
