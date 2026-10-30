@@ -33,8 +33,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: install dependencies
-        run: pip install -r requirements.txt pytest pyinstaller
+      - name: install dependencies (cpu-only torch, keeps bundles small)
+        run: |
+          pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt pytest pyinstaller
 
       - name: run tests
         run: python -m pytest tests -q
