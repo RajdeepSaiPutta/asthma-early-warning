@@ -7,11 +7,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import time
+
 from PIL import ImageGrab
 
 from desktop.app import App
-
-import time
 
 app = App()
 app.update()
