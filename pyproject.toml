@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "asthma-early-warning"
-version = "0.1.0"
-description = "Three-panel asthma risk API: breath, air, screen"
+version = "0.3.0"
+description = "Three-panel asthma risk desktop app: breath, air, screen"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -17,10 +17,7 @@ dependencies = [
     "numpy",
     "tqdm",
     "pillow",
-    "fastapi",
-    "uvicorn",
-    "pydantic",
-    "python-multipart",
+    "fpdf2",
 ]
 
 [project.optional-dependencies]
@@ -49,7 +46,6 @@ src = ["."]
 known-first-party = ["data", "model", "air", "scripts", "desktop", "screen", "predict", "report", "train", "api"]
 
 [tool.ruff.lint]
-# B008 conflicts with fastapi dependency-injection defaults (File(...), Form(...))
 extend-ignore = ["B008"]
 
 [tool.black]

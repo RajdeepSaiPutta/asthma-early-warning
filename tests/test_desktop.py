@@ -82,3 +82,12 @@ def test_anatomy_metrics_synthetic(tmp_path: Path):
         assert 0.0 <= value <= 1.0, name
     notes = observations(metrics)
     assert notes and all(isinstance(n, str) for n in notes)
+
+
+def test_save_pdf(tmp_path: Path):
+    from desktop.pdf_report import save_pdf
+
+    target = save_pdf("asthma risk report\nline two", tmp_path / "report.pdf")
+    data = target.read_bytes()
+    assert data.startswith(b"%PDF")
+    assert len(data) > 200

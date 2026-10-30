@@ -21,7 +21,7 @@ the gui runs on linux, macos, and windows. launch it in place with python deskto
 ./scripts/build_desktop.sh            linux and macos
 scripts\build_desktop.bat             windows
 
-bundles land in dist/AsthmaEarlyWarning/. on mac the launcher sits inside the bundle folder, on windows it is AsthmaEarlyWarning.exe. the app runs inference locally: breath classification from a trained checkpoint, the pm two point five forecast for any preset or custom coordinates, exploratory x ray anatomy metrics, and a combined report you can save to disk. set the ASTHMA_CHECKPOINT env var or drop checkpoints/best_model.pt next to the bundle to enable the breath panel. a github workflow (.github/workflows/desktop.yml) builds all three platforms on push and uploads them as artifacts.
+bundles land in dist/AsthmaEarlyWarning/. on mac the launcher sits inside the bundle folder, on windows it is AsthmaEarlyWarning.exe. the app runs inference locally: breath classification from a trained checkpoint, the pm two point five forecast for any preset or custom coordinates, exploratory x ray anatomy metrics, and a combined report you can save to disk as pdf or markdown. set the ASTHMA_CHECKPOINT env var or drop checkpoints/best_model.pt next to the bundle to enable the breath panel. a github workflow (.github/workflows/desktop.yml) builds all three platforms on push and uploads them as artifacts.
 
 train
 

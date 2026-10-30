@@ -1,8 +1,9 @@
+fpdf2
+numpy
+pandas
+pillow
+requests
+scikit-learn
 torch
 torchaudio
-scikit-learn
-requests
-pandas
-numpy
 tqdm
-pillow

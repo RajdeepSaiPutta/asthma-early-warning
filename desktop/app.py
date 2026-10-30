@@ -541,17 +541,20 @@ class App(tk.Tk):
             return
         self._refresh_report()
         stamp = datetime.now().strftime("%Y%m%d-%H%M")
-        suggested = f"asthma-report-{stamp}.md"
         target = filedialog.asksaveasfilename(
-            defaultextension=".md",
-            filetypes=[("markdown", "*.md"), ("text", "*.txt")],
-            initialfile=suggested,
+            defaultextension=".pdf",
+            filetypes=[("pdf report", "*.pdf"), ("markdown", "*.md"), ("text", "*.txt")],
+            initialfile=f"asthma-report-{stamp}.pdf",
         )
         if not target:
             return
-        Path(target).write_text(
-            build_report_text(self.breath_result, self.air_result, self.city_used, self.wav_used)
-        )
+        text = build_report_text(self.breath_result, self.air_result, self.city_used, self.wav_used)
+        if target.lower().endswith(".pdf"):
+            from desktop.pdf_report import save_pdf
+
+            save_pdf(text, target)
+        else:
+            Path(target).write_text(text)
         self.set_status(f"report saved to {target}")
 
     # ------------------------------------------------------------ screen tab
