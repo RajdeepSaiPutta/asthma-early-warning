@@ -22,6 +22,26 @@ TARGET_SR = 16000
 N_MELS = 64
 
 
+def state_dict_from_checkpoint(path: str | Path) -> dict:
+    """accept both train.py checkpoints ({model_state_dict, ...}) and bare state dicts."""
+    data = torch.load(path, map_location="cpu")
+    if isinstance(data, dict) and "model_state_dict" in data:
+        return data["model_state_dict"]
+    if isinstance(data, dict) and "model" in data and not any(
+        k.startswith(("conv", "fc", "blocks")) for k in data
+    ):
+        return data["model"]
+    return data
+
+
+def load_model(checkpoint: str | Path, device: torch.device | str) -> SpectrogramCNN:
+    model = SpectrogramCNN()
+    model.load_state_dict(state_dict_from_checkpoint(checkpoint))
+    model.to(device)
+    model.eval()
+    return model
+
+
 def load_wav(path: Path, target_sr: int = TARGET_SR) -> torch.Tensor:
     import wave
 
@@ -53,13 +73,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    checkpoint = torch.load(args.checkpoint, map_location=args.device)
-    model = SpectrogramCNN().to(args.device)
-    model.load_state_dict(checkpoint["model"])
+    device = args.device
+    model = load_model(args.checkpoint, device)
     model.eval()
 
     waveform = load_wav(Path(args.wav))
-    spec = spec_from_wav(waveform).unsqueeze(0).to(args.device)
+    spec = spec_from_wav(waveform).unsqueeze(0).to(device)
 
     with torch.no_grad():
         logits = model(spec)

@@ -1,0 +1,50 @@
+name: desktop builds
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - "screen/**"
+      - "air/**"
+      - "model/**"
+      - "data/**"
+      - "predict.py"
+      - "requirements.txt"
+      - "asthma_desktop.spec"
+      - ".github/workflows/desktop.yml"
+
+jobs:
+  build:
+    name: ${{ matrix.artifact }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, artifact: linux }
+          - { os: macos-latest, artifact: macos }
+          - { os: windows-latest, artifact: windows }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: install dependencies
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: run tests
+        run: python -m pytest tests -q
+
+      - name: build bundle
+        run: pyinstaller asthma_desktop.spec --noconfirm
+
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: asthma-early-warning-${{ matrix.artifact }}
+          path: dist/AsthmaEarlyWarning/
+          retention-days: 14

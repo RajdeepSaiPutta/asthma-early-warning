@@ -16,6 +16,7 @@ dependencies = [
     "pandas",
     "numpy",
     "tqdm",
+    "pillow",
     "fastapi",
     "uvicorn",
     "pydantic",

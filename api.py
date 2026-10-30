@@ -3,13 +3,13 @@
 Three panels:
 - /breath: classify lung sound recordings
 - /air: forecast next-day PM2.5 risk
-- /screen: pediatric chest X-ray analysis (feature-flagged)
+- /screen: exploratory chest x-ray anatomy metrics
 """
 
 from __future__ import annotations
 
-import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -17,7 +17,6 @@ import pandas as pd
 import torch
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from air.model import AirModel
@@ -25,12 +24,9 @@ from data.icbhi import list_recordings
 from model.spectrogram_cnn import SpectrogramCNN
 from predict import load_wav, spec_from_wav, LABEL_NAMES
 
-# Optional screen panel (disabled by default)
-SCREEN_ENABLED = os.environ.get("ASTHMA_SCREEN_ENABLED", "false").lower() == "true"
-
 app = FastAPI(
     title="Asthma Early Warning API",
-    version="0.1.0",
+    version="0.2.0",
     description="Three-panel asthma risk API: breath, air, screen",
 )
 
@@ -64,9 +60,12 @@ class ReportResponse(BaseModel):
 
 
 class ScreenResponse(BaseModel):
-    enabled: bool
-    message: Optional[str] = None
-    findings: Optional[dict] = None
+    exploratory: bool = True
+    metrics: dict[str, float] | None = None
+    observations: list[str] | None = None
+    disclaimer: str = (
+        "exploratory anatomy metrics from an unlabeled tool - discussion aids, not diagnosis"
+    )
 
 
 @app.on_event("startup")
@@ -94,7 +93,6 @@ async def health_check():
         "status": "ok",
         "breath_model_loaded": breath_model is not None,
         "air_model_ready": air_model is not None,
-        "screen_enabled": SCREEN_ENABLED,
     }
 
 
@@ -211,38 +209,22 @@ async def generate_report(
     return ReportResponse(breath=breath_result, air=air_result)
 
 
-@app.get("/screen/status", response_model=ScreenResponse)
-async def screen_status():
-    """Check if screen panel is enabled."""
-    if not SCREEN_ENABLED:
-        return ScreenResponse(
-            enabled=False,
-            message="Screen panel disabled. Set ASTHMA_SCREEN_ENABLED=true and provide IRB-approved cohort data to enable.",
-        )
-    return ScreenResponse(
-        enabled=True,
-        message="Screen panel active",
-        findings={"note": "Pediatric chest X-ray analysis active"},
-    )
-
-
 @app.post("/screen/analyze", response_model=ScreenResponse)
 async def analyze_screen(file: UploadFile = File(...)):
-    """Analyze pediatric chest X-ray (requires screen panel enabled)."""
-    if not SCREEN_ENABLED:
-        raise HTTPException(
-            status_code=403,
-            detail="Screen panel disabled. Set ASTHMA_SCREEN_ENABLED=true and provide IRB-approved cohort data.",
-        )
+    """Exploratory chest x-ray anatomy metrics (no trained risk classifier)."""
+    from screen.anatomy_probe import anatomy_metrics, load_xray, observations
 
-    # Placeholder for future implementation
-    return ScreenResponse(
-        enabled=True,
-        findings={
-            "note": "Screen panel analysis not yet implemented. Requires IRB-approved pediatric cohort.",
-            "pretrained_encoder": "Available for transfer learning",
-        },
-    )
+    content = await file.read()
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
+
+    try:
+        img = load_xray(tmp_path)
+        metrics = anatomy_metrics(img)
+        return ScreenResponse(metrics=metrics, observations=observations(metrics))
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

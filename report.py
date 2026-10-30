@@ -16,18 +16,13 @@ import pandas as pd
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from predict import load_wav, spec_from_wav, LABEL_NAMES  # noqa: E402
+from predict import load_wav, spec_from_wav, LABEL_NAMES, load_model  # noqa: E402
 from model.spectrogram_cnn import SpectrogramCNN  # noqa: E402
 from air.model import AirModel  # noqa: E402
 
-import torch
-
 
 def breath_prediction(checkpoint: str, wav: Path, device: str) -> dict:
-    checkpoint_data = torch.load(checkpoint, map_location=device)
-    model = SpectrogramCNN().to(device)
-    model.load_state_dict(checkpoint_data["model"])
-    model.eval()
+    model = load_model(checkpoint, device)
 
     waveform = load_wav(wav)
     spec = spec_from_wav(waveform).unsqueeze(0).to(device)
