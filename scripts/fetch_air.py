@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import os
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pandas as pd
 import requests
@@ -22,7 +23,7 @@ OPEN_METEO_AIR_QUALITY = "https://air-quality-api.open-meteo.com/v1/air-quality"
 def fetch_weather(lat: float, lon: float, days: int = 30) -> pd.DataFrame:
     end = datetime.now(UTC).date() - timedelta(days=1)  # archive lags a day
     start = end - timedelta(days=days)
-    params = {
+    params: dict[str, Any] = {
         "latitude": lat,
         "longitude": lon,
         "start_date": str(start),
@@ -42,7 +43,7 @@ def fetch_weather(lat: float, lon: float, days: int = 30) -> pd.DataFrame:
 def fetch_pm25(lat: float, lon: float, days: int = 30) -> pd.Series | None:
     """daily pm two point five from open meteo's air quality api (no key)."""
     try:
-        params = {
+        params: dict[str, Any] = {
             "latitude": lat,
             "longitude": lon,
             "hourly": "pm2_5",
@@ -72,7 +73,7 @@ def fetch_pm25_openaq(lat: float, lon: float, days: int = 30) -> pd.Series | Non
     start = end - timedelta(days=days)
     url = "https://api.openaq.org/v2/measurements"
     headers = {"X-API-Key": key}
-    params = {
+    params: dict[str, Any] = {
         "coordinates": f"{lat},{lon}",
         "parameter": "pm25",
         "date_from": start.isoformat(),
